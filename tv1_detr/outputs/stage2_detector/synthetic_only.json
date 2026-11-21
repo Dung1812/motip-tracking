@@ -1,0 +1,51 @@
+{
+  "image_size_hw": [
+    480,
+    640
+  ],
+  "raw_shapes": {
+    "pred_logits": [
+      1,
+      300,
+      1
+    ],
+    "pred_boxes": [
+      1,
+      300,
+      4
+    ],
+    "outputs": [
+      1,
+      300,
+      256
+    ]
+  },
+  "num_detections": 2,
+  "embedding_dim": 256,
+  "box_format": "xyxy_pixel",
+  "embedding_kind": "DETR_decoder_object_feature_NOT_ID_embedding",
+  "detections": [
+    {
+      "box_xyxy": [
+        256.0,
+        120.0,
+        384.0,
+        360.0
+      ],
+      "score": 0.952574,
+      "label": 0,
+      "query_index": 2
+    },
+    {
+      "box_xyxy": [
+        96.0,
+        48.0,
+        160.0,
+        144.0
+      ],
+      "score": 0.817574,
+      "label": 0,
+      "query_index": 7
+    }
+  ]
+}
