@@ -7,7 +7,7 @@ import pytest
 
 import scenarios as S
 from tv1_bridge import MockDetector, adapt_tv1_output
-from tv2_interface import (TrackerTV2, check_detection, parse_detections, to_numpy,
+from tv2_interface import (TrackerTV2, check_detection, only_drawn, parse_detections, to_numpy,
                            tracks_to_mot_lines, write_mot)
 
 
@@ -46,13 +46,26 @@ def test_state_new_then_tracked():
     assert all(t["state"] == "tracked" for t in res[2])
 
 
-def test_default_returns_only_new_and_tracked():
-    _, res = run("occlusion")
+def test_default_returns_all_four_states():
+    """Trả lời câu hỏi mở mục 6: mặc định TV2 trả cả lost và terminated."""
+    _, res = run("enter_exit")
+    states = {t["state"] for fr in res.values() for t in fr}
+    assert {"new", "tracked", "lost", "terminated"} <= states
+
+
+def test_hide_lost_returns_only_new_and_tracked():
+    _, res = run("occlusion", include_lost=False, include_terminated=False)
     states = {t["state"] for fr in res.values() for t in fr}
     assert states <= {"new", "tracked"}
 
 
-def test_lost_and_terminated_only_when_requested():
+def test_only_drawn_filters_lost_and_terminated():
+    _, res = run("enter_exit")
+    kept = [t for fr in res.values() for t in only_drawn(fr)]
+    assert kept and {t["state"] for t in kept} <= {"new", "tracked"}
+
+
+def test_lost_and_terminated_returned_when_requested():
     _, res = run("enter_exit", include_lost=True, include_terminated=True)
     states = {t["state"] for fr in res.values() for t in fr}
     assert {"new", "tracked", "lost", "terminated"} <= states
@@ -198,7 +211,7 @@ def test_ids_stable_through_interface(name):
     trk = TrackerTV2(AppearanceDec())
     assign = []
     for f in range(1, sc.num_frames + 1):
-        tracks = trk.update(d(None, f), f)
+        tracks = only_drawn(trk.update(d(None, f), f))
         gt = sc.frames[f - 1]
         row = {}
         for t in tracks:
