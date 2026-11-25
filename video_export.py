@@ -1,6 +1,21 @@
-"""Vẽ kết quả tracking lên frame, ghi video kết quả và file tracking (định dạng MOT)."""
+"""Vẽ kết quả tracking lên frame, ghi video kết quả và file tracking (định dạng MOT).
+
+Theo interface.md v1.0 mục 6: file kết quả trùng tên video (<sequence_name>.txt),
+video kết quả là <sequence_name>_tracked.mp4.
+"""
+
+import os
 
 import cv2
+
+DRAWN_STATES = ("new", "tracked")   # chỉ vẽ và ghi các state này
+
+
+def output_paths(video_name, out_dir="."):
+    """Từ tên video (vd 'dancetrack0004.mp4') -> (đường dẫn video kết quả, đường dẫn file txt)."""
+    seq = os.path.splitext(os.path.basename(video_name))[0]
+    return (os.path.join(out_dir, f"{seq}_tracked.mp4"),
+            os.path.join(out_dir, f"{seq}.txt"))
 
 
 def color_for_id(track_id):
@@ -50,6 +65,7 @@ class VideoExporter:
 
     def write(self, frame_idx, frame, tracks):
         """Vẽ kết quả lên frame, ghi frame vào video và ghi các dòng MOT."""
+        tracks = [t for t in tracks if t.get("state", "tracked") in DRAWN_STATES]
         drawn = draw_tracks(frame, tracks)
         self.writer.write(drawn)
         for t in tracks:
@@ -84,6 +100,7 @@ def process_video(input_path, out_video_path, out_txt_path, pipeline, progress_c
             exporter.write(frame_idx, frame, tracks)
             if progress_callback:
                 progress_callback(frame_idx, total)
+        pipeline.finish()
     finally:
         cap.release()
         exporter.close()
@@ -95,6 +112,8 @@ if __name__ == "__main__":
     import sys
     from mock_pipeline import MockPipeline
 
-    n = process_video(sys.argv[1], "ket_qua.mp4", "ket_qua.txt", MockPipeline(),
+    out_video, out_txt = output_paths(sys.argv[1], "outputs")
+    os.makedirs("outputs", exist_ok=True)
+    n = process_video(sys.argv[1], out_video, out_txt, MockPipeline(),
                       lambda i, total: print(f"\r{i}/{total}", end=""))
-    print(f"\nĐã xử lý {n} frame -> ket_qua.mp4, ket_qua.txt")
+    print(f"\nĐã xử lý {n} frame -> {out_video}, {out_txt}")
