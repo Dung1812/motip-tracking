@@ -14,6 +14,10 @@ class MockPipeline:
         """Gọi trước khi xử lý một video mới."""
         pass
 
+    def finish(self):
+        """Gọi khi hết video (giống TrackerTV2.finish). Bản giả không cần làm gì."""
+        return []
+
     def process(self, frame, frame_idx):
         """Nhận 1 frame (BGR, HxWx3) và số thứ tự frame (bắt đầu từ 1).
         Trả về danh sách track theo định dạng trong interface.md."""
