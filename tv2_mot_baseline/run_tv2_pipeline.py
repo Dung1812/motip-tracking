@@ -5,7 +5,7 @@ Hai cách chạy:
 
   1) Không cần video, không cần model (kiểm tra logic TV2 bằng dữ liệu giả lập):
          python run_tv2_pipeline.py --mock occlusion
-         python run_tv2_pipeline.py --mock demo --include-lost
+         python run_tv2_pipeline.py --mock demo --hide-lost      # ẩn lost/terminated
      Kịch bản: parallel, crossing, bounce, occlusion, enter_exit, sequential, demo
 
   2) Video thật + detections.csv do detr_demo.py của TV1 tạo (cần opencv-python):
@@ -38,7 +38,7 @@ class PipelineTV1TV2:
     """
 
     def __init__(self, detector: Callable, decoder=None, config: Optional[InferenceConfig] = None,
-                 include_lost: bool = False, include_terminated: bool = False, strict: bool = True):
+                 include_lost: bool = True, include_terminated: bool = True, strict: bool = True):
         self.detector = detector
         self.tracker = TrackerTV2(decoder, config, include_lost, include_terminated, strict)
 
@@ -143,13 +143,13 @@ def main() -> int:
     ap.add_argument("--detections", help="detections.csv của detr_demo.py (TV1)")
     ap.add_argument("--labels", nargs="*", default=["person"], help="lớp cần theo dõi (mặc định: person)")
     ap.add_argument("--min-score", type=float, default=0.0)
-    ap.add_argument("--include-lost", action="store_true", help="trả cả track lost/terminated")
+    ap.add_argument("--hide-lost", action="store_true", help="KHÔNG trả track lost/terminated (mặc định: trả đủ 4 state)")
     ap.add_argument("--out", default="outputs")
     a = ap.parse_args()
     if a.mock:
-        return run_mock(a.mock, a.out, a.include_lost)
+        return run_mock(a.mock, a.out, not a.hide_lost)
     if a.video and a.detections:
-        return run_video(a.video, a.detections, a.out, a.include_lost, a.labels or None, a.min_score)
+        return run_video(a.video, a.detections, a.out, not a.hide_lost, a.labels or None, a.min_score)
     ap.error("cần --mock <kịch bản>  hoặc  --video <file> --detections <csv>")
 
 
