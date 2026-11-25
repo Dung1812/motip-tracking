@@ -17,12 +17,13 @@ Vị trí trong Pipeline (hợp đồng mục 4):  TV1 phát hiện  ->  TV3 d�
 Ý nghĩa state (ánh xạ từ vòng đời nội bộ trong track_manager.py):
     new         track vừa xuất hiện ở frame này (nội bộ: vừa sinh, NEWBORN)
     tracked     track đang được theo dõi bình thường (nội bộ: ACTIVE, hoặc NEWBORN đang chờ xác nhận)
-    lost        tạm mất (bị che khuất), chưa kết thúc; bbox = vị trí quan sát cuối   [chỉ trả khi include_lost=True]
-    terminated  kết thúc ở frame này, không dùng lại ID; bbox = vị trí quan sát cuối [chỉ trả khi include_terminated=True]
+    lost        tạm mất (bị che khuất), chưa kết thúc; bbox = vị trí quan sát cuối   [trả khi include_lost=True, mặc định True]
+    terminated  kết thúc ở frame này, không dùng lại ID; bbox = vị trí quan sát cuối [trả khi include_terminated=True, mặc định True]
 
 Câu hỏi mở của hợp đồng mục 6 ("TV2 có trả cả track lost cho giao diện hay không"):
-    mặc định KHÔNG trả lost/terminated (giao diện chỉ vẽ new/tracked, file MOT chỉ ghi new/tracked).
-    Bật bằng include_lost / include_terminated nếu cần.
+    TRẢ LỜI: CÓ. Mặc định trả đủ bốn state (include_lost = include_terminated = True), đúng bảng state ở mục 3.
+    Giao diện / file MOT PHẢI tự lọc: chỉ vẽ và chỉ ghi các track có state new hoặc tracked
+    (xem DRAWN_STATES và hàm only_drawn bên dưới). Muốn quay lại hành vi cũ: include_lost=False, include_terminated=False.
 
 `track_id` = uid nội bộ (số nguyên dương, tăng dần từ 1, KHÔNG BAO GIỜ tái sử dụng trong một video),
 đúng yêu cầu "không tái sử dụng ID đã kết thúc" của hợp đồng. Nhãn ID (label) của decoder thì có tái sử dụng,
@@ -44,6 +45,11 @@ STATE_NEW, STATE_TRACKED, STATE_LOST, STATE_TERMINATED = "new", "tracked", "lost
 DRAWN_STATES = (STATE_NEW, STATE_TRACKED)     # giao diện chỉ vẽ hai state này
 Track = Dict[str, object]
 Detection = Dict[str, object]
+
+
+def only_drawn(tracks: Iterable[Track]) -> List[Track]:
+    """Giữ lại track new/tracked: dùng cho giao diện (vẽ) và file MOT; bỏ lost/terminated."""
+    return [t for t in tracks if t["state"] in DRAWN_STATES]
 
 
 # --------------------------------------------------------------------------- #
@@ -123,7 +129,7 @@ class TrackerTV2:
     """Bọc MOTIPTracker (track_manager + track_memory + tracking_inference) theo giao diện của hợp đồng."""
 
     def __init__(self, decoder: Optional[IDDecoder] = None, config: Optional[InferenceConfig] = None,
-                 include_lost: bool = False, include_terminated: bool = False, strict: bool = False):
+                 include_lost: bool = True, include_terminated: bool = True, strict: bool = False):
         self.cfg = config or InferenceConfig()
         if decoder is None:
             warnings.warn("Chưa có ID Decoder của TV3 -> dùng AppearanceMockDecoder (GIẢ LẬP, chỉ để chạy thử).",

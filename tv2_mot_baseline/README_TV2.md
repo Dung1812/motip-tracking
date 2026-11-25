@@ -23,7 +23,7 @@ tracks = tracker.update(detections, frame_idx)        # frame_idx bắt đầu t
 `detections`: `[{"bbox": [x1,y1,x2,y2], "score": 0.92, "embedding": <Tensor (C,)>}]`
 `tracks`: `[{"track_id": 3, "bbox": [...], "score": 0.88, "state": "new"|"tracked"|"lost"|"terminated"}]`
 
-Mặc định chỉ trả `new` và `tracked` (giao diện chỉ vẽ hai state này). Bật `include_lost=True` / `include_terminated=True` nếu cần.
+Mặc định trả **đủ bốn state** (`new`, `tracked`, `lost`, `terminated`), trả lời câu hỏi mở mục 6 của interface.md. Giao diện và file MOT phải lọc chỉ giữ `new`/`tracked` (hàm `only_drawn` trong `tv2_interface.py`). Muốn ẩn `lost`/`terminated`: `TrackerTV2(include_lost=False, include_terminated=False)`.
 `track_id` không bao giờ tái sử dụng trong một video.
 
 ## Chạy thử
