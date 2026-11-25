@@ -12,7 +12,7 @@ import cv2
 import streamlit as st
 
 from mock_pipeline import MockPipeline
-from video_export import VideoExporter
+from video_export import VideoExporter, output_paths
 
 st.set_page_config(page_title="MOTIP Tracking", layout="wide")
 st.title("MOTIP Tracking - Demo theo dõi đa đối tượng")
@@ -54,8 +54,8 @@ if uploaded is not None:
 
     # ---------- 2. Xử lý ----------
     if st.button("2. Chạy tracking", type="primary"):
-        out_video = os.path.join(tmp_dir, "ket_qua.mp4")
-        out_txt = os.path.join(tmp_dir, "ket_qua.txt")
+        # Tên file theo interface.md mục 6: <tên_video>.txt và <tên_video>_tracked.mp4
+        out_video, out_txt = output_paths(uploaded.name, tmp_dir)
 
         pipeline = get_pipeline(checkpoint, num_objects)
         pipeline.reset()
@@ -82,6 +82,7 @@ if uploaded is not None:
                 if frame_idx % 5 == 0:                          # 5 frame cập nhật 1 lần cho nhẹ
                     preview.image(drawn, channels="BGR", caption=f"Frame {frame_idx}")
                     count_box.write(f"Số đối tượng ở frame này: **{len(tracks)}**")
+            pipeline.finish()                                   # hết video
         finally:
             cap.release()
             exporter.close()
@@ -105,7 +106,8 @@ if result:
                    "Hãy tải video về để xem.")
 
     with open(result["video"], "rb") as f:
-        st.download_button("Tải video kết quả", f, file_name="ket_qua.mp4", mime="video/mp4")
+        st.download_button("Tải video kết quả", f, file_name=os.path.basename(result["video"]),
+                           mime="video/mp4")
     with open(result["txt"], "rb") as f:
-        st.download_button("Tải file tracking (MOT)", f, file_name="ket_qua.txt",
+        st.download_button("Tải file tracking (MOT)", f, file_name=os.path.basename(result["txt"]),
                            mime="text/plain")
