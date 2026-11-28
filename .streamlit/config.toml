@@ -1,0 +1,3 @@
+[client]
+# Ẩn nút Deploy và các tuỳ chọn dành cho lập trình viên
+toolbarMode = "minimal"

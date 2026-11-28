@@ -180,3 +180,5 @@ cython_debug/
 .cursorignore
 .cursorindexingignore
 ket_qua.*
+users.json
+settings.json
