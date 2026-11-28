@@ -12,7 +12,7 @@ import tempfile
 import cv2
 import streamlit as st
 
-from app_settings import load_settings, save_settings
+from app_settings import TRACKER_TYPES, load_settings, save_settings
 from auth import ROLES, add_user, delete_user, load_users, register_user, verify_login
 from mock_pipeline import MockPipeline
 from video_export import VideoExporter, output_paths
@@ -22,11 +22,13 @@ st.set_page_config(page_title="MOTIP Tracking", page_icon="🎯", layout="wide")
 
 def get_pipeline(settings):
     """Tạo pipeline theo cấu hình của admin.
-    Sau này thay nhánh else bằng: return Pipeline(settings["checkpoint_path"], settings["device"])"""
-    if settings["use_mock"]:
-        return MockPipeline(checkpoint_path=settings["checkpoint_path"],
-                            num_objects=settings["num_objects"])
-    raise RuntimeError("Mô hình thật chưa được tích hợp. Admin hãy bật chế độ giả lập.")
+    Sau này thêm nhánh "motip": return Pipeline(settings)  (detector TV1 + tracker TV2 + ID Decoder TV3)"""
+    if settings["tracker_type"] == "mock":
+        return MockPipeline(checkpoint_path=settings["det_checkpoint"],
+                            num_objects=settings["num_objects"],
+                            miss_tolerance=settings["miss_tolerance"],
+                            show_lost=settings["show_lost"])
+    raise RuntimeError("Mô hình MOTIP thật chưa được tích hợp. Admin hãy chọn chế độ Giả lập.")
 
 
 # =====================================================================
@@ -126,6 +128,7 @@ def run_tracking(input_path, video_name, tmp_dir, fps, width, height, total, set
 
     cap = cv2.VideoCapture(input_path)
     frame_idx = 0
+    all_ids, max_count, new_count = set(), 0, 0      # thống kê tracking
     try:
         while True:
             ok, frame = cap.read()
@@ -134,11 +137,17 @@ def run_tracking(input_path, video_name, tmp_dir, fps, width, height, total, set
             frame_idx += 1
             tracks = pipeline.process(frame, frame_idx)
             drawn = exporter.write(frame_idx, frame, tracks)
+
+            active = [t for t in tracks if t["state"] in ("new", "tracked")]
+            all_ids.update(t["track_id"] for t in active)
+            max_count = max(max_count, len(active))
+            new_count += sum(1 for t in active if t["state"] == "new")
+
             if total > 0:
                 progress.progress(min(frame_idx / total, 1.0), text=f"Frame {frame_idx}/{total}")
             if frame_idx % 5 == 0:
                 preview.image(drawn, channels="BGR", caption=f"Frame {frame_idx}")
-                count_box.write(f"Số đối tượng ở frame này: **{len(tracks)}**")
+                count_box.write(f"Đang theo dõi **{len(active)}** đối tượng ở frame này")
         pipeline.finish()
     except Exception as e:
         st.error(f"Lỗi khi xử lý ở frame {frame_idx}: {e}")
@@ -149,15 +158,23 @@ def run_tracking(input_path, video_name, tmp_dir, fps, width, height, total, set
 
     progress.progress(1.0, text="Xong")
     st.session_state["result"] = {"video": out_video, "txt": out_txt,
-                                  "frames": frame_idx, "codec": exporter.codec}
+                                  "frames": frame_idx, "codec": exporter.codec,
+                                  "unique_ids": len(all_ids), "max_count": max_count,
+                                  "new_count": new_count}
 
 
 def show_result():
     result = st.session_state.get("result")
     if not result:
         return
-    st.subheader("Kết quả")
+    st.subheader("Kết quả tracking")
     st.success(f"Đã xử lý {result['frames']} frame.")
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Tổng số ID khác nhau", result["unique_ids"],
+              help="Số đối tượng riêng biệt hệ thống đã theo dõi trong cả video")
+    m2.metric("Nhiều nhất trong 1 frame", result["max_count"])
+    m3.metric("Số lần tạo ID mới", result["new_count"],
+              help="Lớn hơn số người thật trong video nghĩa là có người bị gán lại ID mới")
     if result["codec"] == "avc1":
         st.video(result["video"])
     else:
@@ -176,18 +193,57 @@ def show_result():
 def admin_page(settings):
     st.header("Cấu hình hệ thống")
     with st.form("settings"):
-        checkpoint = st.text_input("Đường dẫn checkpoint", settings["checkpoint_path"])
-        device = st.selectbox("Thiết bị chạy mô hình", ["cpu", "cuda"],
+        st.subheader("1. Detector (TV1) - phát hiện người trong từng frame")
+        det_checkpoint = st.text_input("Checkpoint detector / full MOTIP", settings["det_checkpoint"])
+        c1, c2 = st.columns(2)
+        det_thresh = c1.slider("Ngưỡng phát hiện (DET_THRESH)", 0.0, 1.0,
+                               float(settings["det_thresh"]), 0.05,
+                               help="Bỏ các khung có độ tự tin thấp hơn ngưỡng này")
+        max_detections = c2.number_input("Số khung tối đa mỗi frame", 1, 300,
+                                         int(settings["max_detections"]))
+        c3, c4 = st.columns(2)
+        max_long_side = c3.number_input("Cạnh dài ảnh đầu vào (pixel)", 320, 1920,
+                                        int(settings["max_long_side"]), 80,
+                                        help="Giảm xuống để chạy nhanh hơn trên CPU")
+        device = c4.selectbox("Thiết bị chạy mô hình", ["cpu", "cuda"],
                               index=["cpu", "cuda"].index(settings["device"]))
-        use_mock = st.checkbox("Dùng dữ liệu giả lập (MockPipeline)", settings["use_mock"])
-        num_objects = st.slider("Số đối tượng giả lập", 1, 6, settings["num_objects"])
+
+        st.subheader("2. Tracking (TV2 + TV3) - gán và giữ ID qua các frame")
+        tracker_type = st.selectbox("Bộ tracking", list(TRACKER_TYPES),
+                                    format_func=TRACKER_TYPES.get,
+                                    index=list(TRACKER_TYPES).index(settings["tracker_type"]))
+        id_checkpoint = st.text_input("Checkpoint ID Decoder (để trống nếu dùng full MOTIP)",
+                                      settings["id_checkpoint"])
+        c5, c6 = st.columns(2)
+        id_thresh = c5.slider("Ngưỡng gán ID cũ (ID_THRESH)", 0.0, 1.0,
+                              float(settings["id_thresh"]), 0.05,
+                              help="Xác suất tối thiểu để coi một phát hiện là người đã có ID")
+        newborn_thresh = c6.slider("Ngưỡng tạo ID mới (NEWBORN_THRESH)", 0.0, 1.0,
+                                   float(settings["newborn_thresh"]), 0.05,
+                                   help="Điểm tối thiểu để tạo một ID mới cho người mới xuất hiện")
+        miss_tolerance = st.number_input("Số frame giữ track khi bị mất", 0, 300,
+                                         int(settings["miss_tolerance"]),
+                                         help="Bị che lâu hơn số frame này thì kết thúc track; "
+                                              "khi hiện lại sẽ nhận ID mới")
+        show_lost = st.checkbox("Vẽ cả track đang tạm mất (khung xám)", settings["show_lost"])
+
+        st.subheader("3. Hệ thống")
+        num_objects = st.slider("Số đối tượng giả lập", 1, 6, int(settings["num_objects"]))
         allow_register = st.checkbox("Cho phép người dùng tự đăng ký tài khoản",
                                      settings["allow_register"])
+
         if st.form_submit_button("Lưu cấu hình", type="primary"):
-            save_settings({"checkpoint_path": checkpoint, "device": device,
-                           "use_mock": use_mock, "num_objects": num_objects,
-                           "allow_register": allow_register})
+            save_settings({
+                "det_checkpoint": det_checkpoint, "det_thresh": det_thresh,
+                "max_detections": int(max_detections), "max_long_side": int(max_long_side),
+                "device": device, "tracker_type": tracker_type, "id_checkpoint": id_checkpoint,
+                "id_thresh": id_thresh, "newborn_thresh": newborn_thresh,
+                "miss_tolerance": int(miss_tolerance), "show_lost": show_lost,
+                "num_objects": num_objects, "allow_register": allow_register,
+            })
             st.success("Đã lưu cấu hình.")
+    st.caption("Ở chế độ Giả lập, chỉ 'Số frame giữ track', 'Vẽ track tạm mất' và "
+               "'Số đối tượng giả lập' có tác dụng. Các thông số khác dùng khi ghép mô hình thật.")
 
     st.header("Quản lý tài khoản")
     users = load_users()

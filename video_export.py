@@ -23,9 +23,15 @@ def color_for_id(track_id):
     return ((37 * track_id) % 255, (17 * track_id) % 255, (97 * track_id) % 255)
 
 
-def draw_tracks(frame, tracks):
-    """Vẽ box, ID và số đối tượng lên một bản sao của frame."""
+def draw_tracks(frame, tracks, lost_tracks=()):
+    """Vẽ box, ID và số đối tượng lên một bản sao của frame.
+    lost_tracks (nếu có) được vẽ màu xám, nét mảnh, ghi chữ 'mat' (đang tạm mất)."""
     out = frame.copy()
+    for t in lost_tracks:
+        x1, y1, x2, y2 = [int(v) for v in t["bbox"]]
+        cv2.rectangle(out, (x1, y1), (x2, y2), (160, 160, 160), 1)
+        cv2.putText(out, f"ID {t['track_id']} (mat)", (x1, max(y1 - 8, 15)),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (160, 160, 160), 1)
     for t in tracks:
         x1, y1, x2, y2 = [int(v) for v in t["bbox"]]
         color = color_for_id(t["track_id"])
@@ -65,10 +71,11 @@ class VideoExporter:
 
     def write(self, frame_idx, frame, tracks):
         """Vẽ kết quả lên frame, ghi frame vào video và ghi các dòng MOT."""
-        tracks = [t for t in tracks if t.get("state", "tracked") in DRAWN_STATES]
-        drawn = draw_tracks(frame, tracks)
+        active = [t for t in tracks if t.get("state", "tracked") in DRAWN_STATES]
+        lost = [t for t in tracks if t.get("state") == "lost"]
+        drawn = draw_tracks(frame, active, lost)
         self.writer.write(drawn)
-        for t in tracks:
+        for t in active:                       # file MOT chỉ ghi track new/tracked
             self.txt.write(track_to_mot_line(frame_idx, t))
         return drawn  # trả lại để giao diện hiển thị
 
